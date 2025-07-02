@@ -4,7 +4,7 @@ import time
 import logging
 from urllib.parse import urlparse, parse_qs
 import yt_dlp
-
+#correcao http
 # Caminho padrão de downloads
 DIRETORIO_PADRAO = "/mnt/server/downloads"
 
@@ -54,8 +54,9 @@ def obter_opcoes(diretorio, somente_audio):
         'outtmpl': os.path.join(diretorio, '%(title).200s.%(ext)s'),
         'format': 'bestaudio/best' if somente_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'merge_output_format': 'mp4',
-        'cookiesfrombrowser': ('firefox',),
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0',
+        'no_check_certificate': True,  # Ignora problemas de certificado SSL
+        'quiet': False,
+        'noprogress': False,
     }
 
     if somente_audio:
@@ -108,8 +109,8 @@ def baixar_playlist(url_playlist, diretorio, somente_audio, limite=None):
 
 if __name__ == "__main__":
     print("\n" + "="*50)
-    print(" YouTube Playlist Downloader - Versão Aprimorada ")
-    print("   Desenvolvido por Angela Machado - 2025-05-14")
+    print(" YouTube Playlist Downloader - Versão Corrigida ")
+    print("   Desenvolvido por Angela Machado - 2025-07-02")
     print("="*50)
 
     # Solicita diretório de destino ou usa padrão
