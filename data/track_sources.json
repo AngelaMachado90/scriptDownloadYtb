@@ -1,0 +1,6 @@
+{
+  "sources": [
+    {"artist": "Disturbed", "album": "2000 - The Sickness", "track_number": 1, "title": "Voices", "url": "https://www.youtube.com/watch?v=AwLxg-yvEmc", "type": "official_audio", "origin": "Disturbed official YouTube channel", "priority": 1, "verified_officially": true},
+    {"artist": "Disturbed", "album": "2000 - The Sickness", "track_number": 8, "title": "Want", "url": "https://www.youtube.com/watch?v=YAgboJGglfA", "type": "official_audio", "origin": "Disturbed official YouTube channel", "priority": 1, "verified_officially": true}
+  ]
+}

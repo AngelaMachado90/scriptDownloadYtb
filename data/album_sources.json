@@ -1,0 +1,6 @@
+{
+  "sources": [
+    {"artist": "Jonas Brothers", "album": "2023 - The Album", "type": "album_playlist", "url": "https://www.youtube.com/watch?v=1E8V-HIIJ30&list=PLxA687tYuMWiTlscgQ2EowZAmBecEwwrS", "origin": "Jonas Brothers official YouTube channel", "priority": 1, "verified_officially": true},
+    {"artist": "Jonas Brothers", "album": "2019 - Happiness Begins", "type": "album_playlist", "url": "https://www.youtube.com/watch?v=Vp1TwHLDOzg&list=PLH9WbNQwh6jeZ9mF-Kdz9B2sVlKUdVrJA", "origin": "Jonas Brothers official YouTube channel", "priority": 1, "verified_officially": true}
+  ]
+}

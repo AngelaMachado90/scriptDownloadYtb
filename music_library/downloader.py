@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ RAIZ_PROJETO = Path(__file__).resolve().parent.parent
 DIRETORIO_PADRAO = "./downloads"
 EXTENSOES_TEMPORARIAS = {".part", ".ytdl", ".tmp"}
 VERSAO_MINIMA_DENO = (2, 3, 0)
+COOKIE_RUNTIME_PATH = Path(tempfile.gettempdir()) / "youtube-cookies-runtime.txt"
 
 
 class ColoredFormatter(logging.Formatter):
@@ -106,8 +108,42 @@ def opcoes_desafio_javascript():
     }
     arquivo_cookies = os.environ.get("YTDLP_COOKIES_FILE")
     if arquivo_cookies:
-        opcoes["cookiefile"] = arquivo_cookies
+        origem = Path(arquivo_cookies)
+        if origem.is_file() and os.access(origem, os.R_OK):
+            # yt-dlp pode atualizar o jar; nunca entregue o segredo montado como RO.
+            shutil.copyfile(origem, COOKIE_RUNTIME_PATH)
+            os.chmod(COOKIE_RUNTIME_PATH, 0o600)
+            opcoes["cookiefile"] = str(COOKIE_RUNTIME_PATH)
     return opcoes
+
+
+def classificar_erro(detalhe):
+    texto = str(detalhe).lower()
+    if "429" in texto or "too many requests" in texto:
+        return "HTTP_429"
+    if "cookie" in texto or "not a bot" in texto or "sign in to confirm" in texto or "authentication" in texto:
+        return "AUTH"
+    if "private" in texto:
+        return "PRIVATE"
+    if "format is not available" in texto or "no video formats" in texto:
+        return "NO_FORMAT"
+    if "unavailable" in texto or "not available" in texto:
+        return "UNAVAILABLE"
+    if "network" in texto or "timed out" in texto or "connection" in texto:
+        return "NETWORK"
+    return "UNKNOWN"
+
+
+def mensagem_amigavel(categoria):
+    return {
+        "AUTH": "Sua sessão do YouTube expirou. Atualize o arquivo de cookies e tente novamente.",
+        "HTTP_429": "O YouTube bloqueou tentativas temporariamente. Aguarde antes de tentar novamente.",
+        "PRIVATE": "Esta fonte não está disponível. Escolha outra URL oficial.",
+        "NO_FORMAT": "O YouTube não liberou áudio para esta URL. Escolha outra fonte oficial.",
+        "UNAVAILABLE": "Esta fonte não está disponível. Escolha outra URL oficial.",
+        "NETWORK": "Não foi possível acessar o YouTube agora. Tente novamente mais tarde.",
+        "UNKNOWN": "Não foi possível processar esta fonte. Consulte o histórico para escolher outra URL.",
+    }[categoria]
 
 
 def validar_recursos_desafio(exigir_cookies=False):
@@ -189,10 +225,36 @@ def baixar_item(url, diretorio, somente_audio, descricao, indice_playlist=None, 
         motivo = f"código de retorno {codigo_retorno}" if codigo_retorno != 0 else "nenhum arquivo final criado"
         if registrador.erros:
             motivo = f"{motivo}; {registrador.erros[-1]}"
-        resultado.falhas.append(f"{descricao}: {motivo}")
-        logging.error("Falha em '%s' (%s).", descricao, motivo)
+        categoria = classificar_erro(motivo)
+        resultado.falhas.append(f"{descricao}: {mensagem_amigavel(categoria)}")
+        logging.error("Falha técnica em '%s' (%s).", descricao, motivo)
     else:
         logging.info("Concluído: %s", descricao)
+    return resultado
+
+
+def baixar_item_da_playlist(url, diretorio, somente_audio, descricao, indice):
+    """Baixa somente o índice solicitado de uma playlist já confirmada pela usuária."""
+    resultado = ResultadoDownload()
+    antes = arquivos_finais(diretorio)
+    registrador = RegistradorYtDlp()
+    opcoes = obter_opcoes(diretorio, somente_audio, indice, registrador)
+    opcoes["playlist_items"] = str(indice)
+    try:
+        with yt_dlp.YoutubeDL(opcoes) as ydl:
+            codigo = ydl.download([url])
+    except Exception as erro:
+        codigo = 1
+        logging.error("Falha técnica na playlist: %s", erro)
+    criados = sorted(arquivos_finais(diretorio) - antes)
+    resultado.arquivos.extend(criados)
+    if codigo != 0 or not criados:
+        motivo = f"código de retorno {codigo}" if codigo != 0 else "nenhum arquivo final criado"
+        if registrador.erros:
+            motivo = f"{motivo}; {registrador.erros[-1]}"
+        categoria = classificar_erro(motivo)
+        resultado.falhas.append(f"{descricao}: {mensagem_amigavel(categoria)}")
+        logging.error("Falha técnica na faixa %s da playlist (%s).", indice, motivo)
     return resultado
 
 
@@ -268,9 +330,22 @@ def executar_download(url, diretorio, somente_audio=True, limite=None, numerar_p
     return baixar_video(url, diretorio, somente_audio)
 
 
+def validar_url_sem_baixar(url):
+    """Ação explícita: extrai metadados sem criar arquivo de música."""
+    try:
+        opcoes = opcoes_desafio_javascript() | {"skip_download": True, "simulate": True, "quiet": True}
+        with yt_dlp.YoutubeDL(opcoes) as ydl:
+            ydl.extract_info(url, download=False)
+        return "SUCESSO", "UNKNOWN", "Fonte validada sem download."
+    except Exception as erro:
+        categoria = classificar_erro(erro)
+        logging.error("Falha técnica na validação de URL: %s", erro)
+        return "FALHA", categoria, mensagem_amigavel(categoria)
+
+
 def eh_bloqueio_temporario(resultado):
     """Identifica bloqueios que não devem ser repetidos automaticamente."""
-    termos = ("http error 429", "too many requests", "not a bot", "sign in to confirm", "authentication", "autentica")
+    termos = ("http error 429", "too many requests", "not a bot", "sign in to confirm", "authentication", "autentica", "bloqueou tentativas temporariamente", "sessão do youtube expirou")
     texto = " ".join(resultado.falhas).lower()
     return any(termo in texto for termo in termos)
 

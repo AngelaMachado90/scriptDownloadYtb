@@ -10,11 +10,20 @@ import streamlit as st
 
 from music_library.downloader import (
     RAIZ_PROJETO,
+    baixar_item,
+    baixar_item_da_playlist,
     configurar_logs,
     eh_bloqueio_temporario,
     executar_download,
     status_final,
+    validar_url_sem_baixar,
 )
+from music_library.library import filtrar_biblioteca, listar_biblioteca
+from music_library.history import HistoryStore
+from music_library.official_artists import artista_oficial, busca_oficial, url_pertence_ao_canal
+from music_library.track_sources import best_source
+from music_library.album_sources import albums_for_artist as albums_catalogados, artists_with_album_sources, best_album_source
+from music_library.missing_downloads import acao_faltantes_disponivel, executar_plano, planejar_faixas_faltantes
 
 
 DOWNLOADS_DIR = (RAIZ_PROJETO / "downloads").resolve()
@@ -73,16 +82,7 @@ def albuns_existentes(artista):
 
 
 def biblioteca():
-    registros = []
-    for artista in artistas_existentes():
-        albuns = albuns_existentes(artista)
-        if not albuns:
-            quantidade = sum(1 for arquivo in (DOWNLOADS_DIR / artista).glob("*.mp3") if arquivo.is_file())
-            registros.append({"Artista": artista, "Álbum": "—", "MP3s": quantidade})
-        for album in albuns:
-            quantidade = sum(1 for arquivo in (DOWNLOADS_DIR / artista / album).rglob("*.mp3") if arquivo.is_file())
-            registros.append({"Artista": artista, "Álbum": album, "MP3s": quantidade})
-    return registros
+    return listar_biblioteca(DOWNLOADS_DIR)
 
 
 def url_youtube_valida(url):
@@ -118,14 +118,14 @@ def render_app():  # pragma: no cover - renderizado pelo Streamlit em execução
     coluna_formulario, coluna_biblioteca = st.columns([1, 1])
     with coluna_formulario:
         st.subheader("Novo download")
-        artistas = artistas_existentes()
+        artistas = sorted(set(artistas_existentes()) | set(artists_with_album_sources()))
         artista_bruto = escolher_nome("Artista", artistas, "artista")
         try:
             artista_validado = nome_seguro(artista_bruto, "o artista") if artista_bruto else ""
         except ValueError as erro:
             artista_validado = ""
             st.error(str(erro))
-        albuns = albuns_existentes(artista_validado) if artista_validado else []
+        albuns = sorted(set(albuns_existentes(artista_validado)) | set(albums_catalogados(artista_validado))) if artista_validado else []
         album_bruto = escolher_nome("Álbum", albuns, "album")
         try:
             album_validado = nome_seguro(album_bruto, "o álbum") if album_bruto else ""
@@ -135,7 +135,10 @@ def render_app():  # pragma: no cover - renderizado pelo Streamlit em execução
             st.error(str(erro))
         if destino:
             st.code(str(destino), language=None)
-        url = st.text_input("URL do vídeo ou playlist", placeholder="https://www.youtube.com/watch?v=...")
+        fonte_album = best_album_source(artista_validado, album_validado) if artista_validado and album_validado else None
+        if fonte_album:
+            st.success("Fonte: playlist de álbum")
+        url = st.text_input("URL do vídeo ou playlist", value=fonte_album["url"] if fonte_album else "", placeholder="https://www.youtube.com/watch?v=...")
         somente_audio = st.checkbox("Somente áudio", value=True)
         numerar = st.checkbox("Numerar faixas para o carro", value=True)
         iniciar = st.button("Iniciar download", type="primary", use_container_width=True)
@@ -179,11 +182,124 @@ def render_app():  # pragma: no cover - renderizado pelo Streamlit em execução
         st.subheader("Minha biblioteca")
         registros = biblioteca()
         if registros:
-            st.dataframe(registros, hide_index=True, use_container_width=True)
-            st.caption(f"Total de MP3s: {sum(registro['MP3s'] for registro in registros)}")
+            artistas_filtro = ["Todos os artistas", *sorted({registro["Artista"] for registro in registros})]
+            artista_filtro = st.selectbox("Filtrar por artista", artistas_filtro) or "Todos os artistas"
+            cds_filtro = ["Todos os CDs", *sorted({registro["CD"] for registro in registros if artista_filtro == "Todos os artistas" or registro["Artista"] == artista_filtro})]
+            cd_filtro = st.selectbox("Filtrar por CD", cds_filtro) or "Todos os CDs"
+            exibidos = filtrar_biblioteca(registros, artista_filtro, cd_filtro)
+            st.dataframe([{chave: registro[chave] for chave in ("Artista", "CD", "Progresso", "Status")} for registro in exibidos], hide_index=True, use_container_width=True)
+            for registro in exibidos:
+                atual, total = (map(int, registro["Progresso"].split(" / ")) if registro["Progresso"] != "—" else (0, 0))
+                if total:
+                    st.progress(atual / total, text=f'{registro["Artista"]} — {registro["CD"]}: {registro["Progresso"]}')
+                chave_lote = f"faltantes-confirmar-{registro['Artista']}-{registro['CD']}"
+                if acao_faltantes_disponivel(registro):
+                    historico_lote = HistoryStore(RAIZ_PROJETO / "data" / "library_history.sqlite")
+                    destino_lote = diretorio_do_album(registro["Artista"], registro["CD"])
+                    plano = planejar_faixas_faltantes(registro["Artista"], registro["CD"], destino_lote, historico_lote)
+                    if st.button(f"Baixar músicas faltantes ({len(plano)})", key=f"baixar-faltantes-{registro['Artista']}-{registro['CD']}"):
+                        st.session_state[chave_lote] = plano
+                    confirmacao = st.session_state.get(chave_lote)
+                    if confirmacao:
+                        st.warning("Serão baixadas, uma por vez: " + ", ".join(item["track"] for item in confirmacao))
+                        if st.button("Confirmar download das faixas faltantes", key=f"confirmar-{registro['Artista']}-{registro['CD']}"):
+                            def baixar_planejada(item, destino):
+                                if item["kind"] == "playlist_item":
+                                    return baixar_item_da_playlist(item["url"], destino, True, item["track"], item["index"])
+                                return baixar_item(item["url"], destino, True, item["track"], item["index"], numerar_playlist=True)
+
+                            with lock_download() as adquirido:
+                                if not adquirido:
+                                    st.warning("Já existe um download em andamento nesta biblioteca. Aguarde a conclusão.")
+                                else:
+                                    destino_lote.mkdir(parents=True, exist_ok=True)
+                                    log_file = configurar_logs()
+                                    st.session_state.status_download = "Baixando músicas faltantes…"
+                                    with st.spinner("Baixando somente as faixas faltantes…"):
+                                        resultado_lote = executar_plano(confirmacao, destino_lote, baixar_planejada, historico_lote)
+                                    st.session_state.ultimo_log = str(log_file)
+                                    st.session_state.pop(chave_lote, None)
+                                    if resultado_lote["baixadas"]:
+                                        st.success("Músicas baixadas: " + ", ".join(resultado_lote["baixadas"]))
+                                    if resultado_lote["faltando"]:
+                                        st.warning("Continuam faltando: " + ", ".join(resultado_lote["faltando"]))
+                                    if resultado_lote["alternativas"]:
+                                        st.info("Há outra fonte cadastrada para: " + ", ".join(resultado_lote["alternativas"]) + ". Escolha-a no detalhe da faixa.")
+                                    if not resultado_lote["baixadas"] and not resultado_lote["faltando"]:
+                                        st.info("As faixas já existem na biblioteca.")
+                                    st.rerun()
+                    historico_lote.close()
+                elif registro["Status"] in {"Sem catálogo", "Sem faixas"}:
+                    st.caption("Cadastre a playlist do álbum antes de baixar as faixas.")
+                if cd_filtro == registro["CD"] and registro["Status"] == "Incompleto" and registro["faltantes"]:
+                    st.warning("Faixas faltantes: " + ", ".join(registro["faltantes"]))
+                    historico = HistoryStore(RAIZ_PROJETO / "data" / "library_history.sqlite")
+                    proxima = st.session_state.get(f"proxima-{registro['CD']}", registro["faltantes"][0])
+                    if proxima not in registro["faltantes"]:
+                        proxima = registro["faltantes"][0]
+                    fonte_recomendada = best_source(registro["Artista"], registro["CD"], proxima, historico)
+                    st.info(f"Próxima faixa: {proxima}")
+                    if fonte_recomendada:
+                        st.success("Fonte oficial")
+                    else:
+                        st.caption("Nenhuma fonte disponível agora; verifique bloqueios ou associe uma URL manualmente.")
+                    if st.button("Concluir CD", key=f"concluir-{registro['CD']}"):
+                        st.info("Cadastre ou escolha uma fonte para testar uma faixa por vez.")
+                    for faixa in registro["faltantes"]:
+                        fontes = historico.sources(registro["Artista"], registro["CD"], faixa)
+                        with st.expander(f"{faixa} — {len(fontes)} fonte(s) disponível(is)"):
+                            oficial = artista_oficial(registro["Artista"])
+                            if oficial:
+                                st.success("Canal oficial cadastrado")
+                                st.caption(oficial["youtube_channel"])
+                            recomendada = fonte_recomendada["url"] if faixa == proxima and fonte_recomendada else ""
+                            url_manual = st.text_input("Adicionar URL", value=recomendada, key=f"url-{registro['CD']}-{faixa}")
+                            if st.button("Adicionar URL", key=f"adicionar-{registro['CD']}-{faixa}") and url_manual:
+                                historico.add_candidate(registro["Artista"], registro["CD"], faixa, url_manual)
+                                st.rerun()
+                            st.link_button("Buscar fonte oficial", busca_oficial(registro["Artista"], faixa))
+                            for fonte in fontes:
+                                if fonte["next_retry_at"]:
+                                    st.caption(f"Não tentar novamente antes de {fonte['next_retry_at'][:10].split('-')[2]}/{fonte['next_retry_at'][:10].split('-')[1]}/{fonte['next_retry_at'][:10].split('-')[0]} — {fonte['error_category']}: {fonte['message']}")
+                                if st.button("Testar URL sem baixar", key=f"testar-{fonte['id']}"):
+                                    resultado_teste, categoria, mensagem = validar_url_sem_baixar(fonte["url"])
+                                    historico.record_attempt(fonte["id"], resultado_teste, categoria, mensagem)
+                                    if resultado_teste == "SUCESSO":
+                                        st.success(mensagem)
+                                    else:
+                                        st.error(mensagem)
+                                    st.rerun()
+                                if st.button("Baixar esta faixa", key=f"baixar-{fonte['id']}"):
+                                    resultado_download = executar_download(fonte["url"], DOWNLOADS_DIR / registro["Artista"] / registro["CD"], True, exigir_desafios_js=True)
+                                    if resultado_download.falhas:
+                                        mensagem = resultado_download.falhas[-1]
+                                        categoria = "UNKNOWN"
+                                        historico.record_attempt(fonte["id"], "FALHA", categoria, mensagem)
+                                        st.error(mensagem)
+                                    else:
+                                        historico.record_attempt(fonte["id"], "SUCESSO", "UNKNOWN", "Download concluído.")
+                                        historico.record_download(registro["Artista"], registro["CD"], faixa, fonte["url"])
+                                        st.success("Download concluído.")
+                                    st.rerun()
+                                if oficial and url_pertence_ao_canal(fonte["url"], registro["Artista"]) and st.button("Marcar como verificada oficialmente", key=f"oficial-{fonte['id']}"):
+                                    historico.mark_official(fonte["id"])
+                                    st.rerun()
+                            if fontes and st.button("Tentar próxima fonte disponível", key=f"proxima-{registro['CD']}-{faixa}"):
+                                st.warning("Confirme a URL desejada: apenas uma fonte pode ser testada por vez.")
+                    if st.button("Próxima faixa faltante", key=f"avancar-{registro['CD']}"):
+                        st.session_state[f"proxima-{registro['CD']}"] = registro["faltantes"][1] if len(registro["faltantes"]) > 1 else proxima
+                    historico.close()
         else:
             st.info("Nenhum artista ou álbum encontrado ainda.")
     st.divider()
+    with st.expander("Histórico de falhas"):
+        historico = HistoryStore(RAIZ_PROJETO / "data" / "library_history.sqlite")
+        registros_historico = [dict(linha) for linha in historico.history()]
+        if registros_historico:
+            st.dataframe(registros_historico, hide_index=True, use_container_width=True)
+        else:
+            st.caption("Nenhuma tentativa registrada.")
+        historico.close()
     st.subheader("Logs")
     logs = sorted(LOGS_DIR.glob("*.log"), key=lambda arquivo: arquivo.stat().st_mtime, reverse=True) if LOGS_DIR.exists() else []
     if logs:

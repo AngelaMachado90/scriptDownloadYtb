@@ -1,0 +1,16 @@
+{
+  "artists": [
+    {
+      "canonical_name": "Disturbed",
+      "youtube_channel": "https://www.youtube.com/channel/UCveWMJeHgcIUPMnFzd7Vxjg",
+      "official_site": "https://disturbed1.com/",
+      "search_terms": ["{artista} {faixa} official audio", "{artista} {faixa} official music video"]
+    },
+    {
+      "canonical_name": "Jonas Brothers",
+      "youtube_channel": "https://www.youtube.com/channel/UCFvXnyAhluG3sa6p3eOs_LA",
+      "official_site": "https://jonasbrothers.com/",
+      "search_terms": ["{artista} {faixa} official audio", "{artista} {faixa} official music video"]
+    }
+  ]
+}

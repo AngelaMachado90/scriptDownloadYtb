@@ -1,7 +1,32 @@
-# Operação e solução de problemas
+# Operação da Biblioteca do Ariel
 
-Os testes unitários verificam funções isoladas, como validação de caminhos, classificação de resultados e tratamento de erros do yt-dlp. Não acessam rede nem serviços.
+## Iniciar
 
-Os testes de integração combinam a interface, os fluxos simulados de playlist, o lock local e verificações locais de Compose/healthcheck. Usam somente `tmp_path`, mocks e arquivos falsos.
+No diretório do projeto, execute `docker compose up -d --build`. A aplicação
+fica no servidor em `127.0.0.1:8507`; pelo Windows, encaminhe essa porta na aba
+**PORTS** do VS Code e abra a URL fornecida por ele.
 
-Download real é uma operação separada, iniciada somente pelo botão da Biblioteca do Ariel ou pelo CLI. Ele pode acessar o YouTube e gravar arquivos na biblioteca; por isso não faz parte da suíte de testes.
+## Cadastrar artista, CD e playlist
+
+Cadastre as faixas esperadas em `music_library/catalog.py`, com artista, ano,
+nome do CD e lista ordenada de faixas. Cadastre a URL de uma playlist de álbum
+em `data/album_sources.json`. A URL apenas preenche o formulário: nenhum
+download começa sem clique explícito em **Iniciar download**.
+
+## Baixar músicas faltantes
+
+Um CD **Incompleto** exibe **Baixar músicas faltantes (N)**. Confira a lista e
+confirme: só as faixas sem MP3 correspondente são processadas, uma por vez e na
+ordem do álbum. CDs **Sem catálogo** ou **Sem faixas** precisam de playlist e
+catálogo antes de poderem ser completados.
+
+## Resultado e locais
+
+- **SUCESSO**: todos os itens solicitados foram criados.
+- **PARCIAL**: parte foi criada e ao menos uma faixa falhou.
+- **FALHA**: nenhum arquivo foi criado.
+
+Os MP3s ficam em `downloads/`, os diagnósticos técnicos em `logs/` e o histórico
+de tentativas em `data/library_history.sqlite`. Depois de uma falha, a mesma URL
+só pode ser tentada novamente após 30 dias; uma fonte diferente pode ser usada
+antes disso.

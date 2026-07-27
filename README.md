@@ -113,10 +113,10 @@ A aplicação fica limitada ao servidor em:
 
 Como o VS Code está conectado remotamente ao Pop!_OS, abra a aba **Ports** no VS Code e encaminhe a porta `8507`.
 
-Depois, acesse no navegador local:
+No Windows, abra a aba **PORTS** do VS Code, encaminhe a porta `8507` e use **a URL fornecida pelo próprio VS Code** no navegador. Não presuma que `127.0.0.1:8507` do servidor já esteja acessível diretamente no computador cliente.
 
 ```text
-http://127.0.0.1:8507
+URL fornecida pelo VS Code após o encaminhamento
 ```
 
 A aplicação não deve ser exposta publicamente sem uma decisão explícita de segurança.
@@ -137,6 +137,16 @@ Na tela **Biblioteca do Ariel**:
    * **Numerar faixas para o carro**
 6. Clique em **Iniciar download**.
 7. Aguarde o resumo final.
+
+Quando um CD estiver como **Incompleto**, a seção **Minha biblioteca** mostra
+**Baixar músicas faltantes (N)**. Ao clicar, confira a lista e confirme. A ação
+baixa apenas as faixas que ainda não possuem MP3, uma por vez e na numeração
+original. Ela usa uma fonte individual cadastrada; se houver apenas playlist de
+álbum, seleciona somente a posição correspondente na playlist. Uma falha fica
+registrada no histórico e bloqueia a mesma URL por 30 dias.
+
+CDs marcados como **Sem catálogo** ou **Sem faixas** não habilitam essa ação:
+cadastre a playlist e as faixas esperadas do álbum antes de tentar completá-lo.
 
 A interface só pode criar arquivos dentro de:
 
@@ -243,9 +253,26 @@ Ao final de cada execução, o downloader mostra um resumo.
 
 ---
 
+## Catálogo e completude
+
+O catálogo versionado fica em `music_library/catalog.py`. Para cadastrar uma banda ou álbum, adicione `artista`, `ano`, `album` (igual ao nome da pasta) e a lista ordenada `faixas`. A biblioteca compara os nomes normalizados dos MP3s e só marca `Completo` quando não há faltantes, extras ou duplicatas.
+
+As fontes oficiais ficam em `data/official_artists.json`. Para cadastrar uma nova banda, informe o nome canônico, canal oficial do YouTube, site oficial e termos de busca. URLs manuais começam não verificadas; só podem receber o selo oficial quando pertencem ao canal oficialmente cadastrado.
+
+### Adicionar artista ou álbum ao catálogo
+
+Cadastre artistas oficiais em `data/official_artists.json`, fontes por faixa em `data/track_sources.json` e playlists oficiais de álbum em `data/album_sources.json`. Uma playlist de álbum apenas preenche a URL e continua exigindo confirmação em **Iniciar download**. Antes de um CD ser marcado completo, registre a lista ordenada de faixas esperadas em `music_library/catalog.py`; quantidade de MP3s não substitui esse catálogo.
+
+## Fontes e histórico
+
+`data/library_history.sqlite` é uma base de aprendizado operacional, não machine learning. Cadastre uma fonte oficial manualmente, prefira canais da banda, gravadora ou YouTube Topic e interprete `HTTP_429`, `AUTH`, `PRIVATE`, `UNAVAILABLE`, `NO_FORMAT`, `NETWORK` e `UNKNOWN` pelo histórico. Falhas bloqueiam a mesma URL por 30 dias; outra URL para a mesma faixa pode ser tentada separadamente. Cookies, credenciais, headers e caminhos de secrets não são persistidos.
+
+O arquivo de cookies montado como segredo nunca é entregue diretamente ao yt-dlp: antes de cada tentativa ele é copiado para uma cópia temporária gravável com permissão `0600`. Atualize o arquivo no host quando a sessão expirar; o original não é alterado.
+
 ## Testes automatizados
 
 Os testes não baixam músicas, não acessam o YouTube e não usam cookies reais.
+O healthcheck valida que a aplicação está **saudável no servidor** em `127.0.0.1:8507`; isso não significa que ela já esteja acessível no computador cliente. O acesso no Windows é uma aceitação manual via aba **PORTS** do VS Code.
 
 Executar todos os testes e verificações:
 
