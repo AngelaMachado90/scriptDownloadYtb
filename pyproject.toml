@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --cov=music_library.downloader --cov=app --cov-report=term-missing"
+pythonpath = ["."]
+markers = [
+  "unit: teste unitário isolado, sem rede, cookies ou arquivos reais",
+  "integration: teste de integração local com fakes e diretórios temporários",
+]

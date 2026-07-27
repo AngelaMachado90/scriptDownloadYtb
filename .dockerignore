@@ -1,0 +1,6 @@
+.git
+__pycache__/
+*.py[cod]
+downloads/
+logs/
+.streamlit/

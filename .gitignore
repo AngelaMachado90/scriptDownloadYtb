@@ -1,0 +1,10 @@
+downloads/
+logs/
+**/__pycache__/
+.pytest_cache/
+*.pyc
+.coverage
+.env
+cookies.txt
+youtube-cookies.txt
+secrets/
