@@ -18,18 +18,75 @@ from music_library.downloader import (
     status_final,
     validar_url_sem_baixar,
 )
-from music_library.library import filtrar_biblioteca, listar_biblioteca
+from music_library.library import catalogo_do_album, filtrar_biblioteca, listar_biblioteca
 from music_library.history import HistoryStore
 from music_library.official_artists import artista_oficial, busca_oficial, url_pertence_ao_canal
-from music_library.track_sources import best_source
+from music_library.track_sources import best_source, sources_for_track
 from music_library.album_sources import albums_for_artist as albums_catalogados, artists_with_album_sources, best_album_source
-from music_library.missing_downloads import acao_faltantes_disponivel, executar_plano, planejar_faixas_faltantes
+from music_library.missing_downloads import acao_por_cd, executar_plano, planejar_faixas_faltantes
 
 
 DOWNLOADS_DIR = (RAIZ_PROJETO / "downloads").resolve()
 LOGS_DIR = RAIZ_PROJETO / "logs"
 LOCK_FILE = LOGS_DIR / "download.lock"
 NOME_NOVO = "Criar novo"
+
+def dados_visuais_status(status):
+    """Retorna o ícone Bootstrap e o texto correspondente ao status."""
+    configuracoes = {
+        "Completo": {
+            "icone": (
+                "https://api.iconify.design/bi/check-circle-fill.svg"
+                "?color=%23198754"
+            ),
+            "texto": "Completo",
+        },
+        "Incompleto": {
+            "icone": (
+                "https://api.iconify.design/bi/exclamation-circle-fill.svg"
+                "?color=%23ffc107"
+            ),
+            "texto": "Incompleto",
+        },
+        "Sem faixas": {
+            "icone": (
+                "https://api.iconify.design/bi/dash-circle-fill.svg"
+                "?color=%236c757d"
+            ),
+            "texto": "Sem faixas",
+        },
+    }
+
+    return configuracoes.get(
+        status,
+        {
+            "icone": (
+                "https://api.iconify.design/bi/info-circle-fill.svg"
+                "?color=%230dcaf0"
+            ),
+            "texto": str(status),
+        },
+    )
+
+
+def preparar_tabela_biblioteca(registros):
+    """Prepara os registros exibidos no dataframe da biblioteca."""
+    tabela = []
+
+    for registro in registros:
+        status = dados_visuais_status(registro["Status"])
+
+        tabela.append(
+            {
+                "Ícone": status["icone"],
+                "Artista": registro["Artista"],
+                "CD": registro["CD"],
+                "Progresso": registro["Progresso"],
+                "Status": status["texto"],
+            }
+        )
+
+    return tabela
 
 
 @contextmanager
@@ -192,17 +249,49 @@ def render_app():  # pragma: no cover - renderizado pelo Streamlit em execução
                 atual, total = (map(int, registro["Progresso"].split(" / ")) if registro["Progresso"] != "—" else (0, 0))
                 if total:
                     st.progress(atual / total, text=f'{registro["Artista"]} — {registro["CD"]}: {registro["Progresso"]}')
-                chave_lote = f"faltantes-confirmar-{registro['Artista']}-{registro['CD']}"
-                if acao_faltantes_disponivel(registro):
+                catalogo = catalogo_do_album(registro["Artista"], registro["CD"])
+                fonte_album_linha = best_album_source(registro["Artista"], registro["CD"])
+                tem_fonte_individual = bool(catalogo and any(sources_for_track(registro["Artista"], registro["CD"], faixa) for faixa in catalogo["faixas"]))
+                tem_fonte = bool(fonte_album_linha or tem_fonte_individual)
+                acao = acao_por_cd(registro, bool(catalogo), bool(fonte_album_linha) if registro["Status"] == "Sem faixas" else tem_fonte)
+                if acao["tipo"] == "completo":
+                    st.button(acao["texto"], key=f"completo-{registro['Artista']}-{registro['CD']}", disabled=True)
+                elif acao["tipo"] == "sem_faltantes":
+                    st.button(acao["texto"], key=f"sem-faltantes-{registro['Artista']}-{registro['CD']}", disabled=True)
+                    st.caption("Há arquivos duplicados ou extras; nenhum download será iniciado.")
+                elif acao["tipo"] == "sem_fonte":
+                    st.button(acao["texto"], key=f"sem-fonte-{registro['Artista']}-{registro['CD']}", disabled=True)
+                    st.caption("Cadastre a playlist do álbum ou uma fonte por faixa antes de baixar.")
+                elif acao["tipo"] == "album":
+                    if not fonte_album_linha:
+                        st.button(acao["texto"], key=f"baixar-album-{registro['Artista']}-{registro['CD']}", disabled=True)
+                        st.caption("Fonte de álbum não encontrada.")
+                    elif st.button(acao["texto"], key=f"baixar-album-{registro['Artista']}-{registro['CD']}"):
+                        destino_lote = diretorio_do_album(registro["Artista"], registro["CD"])
+                        with lock_download() as adquirido:
+                            if not adquirido:
+                                st.warning("Já existe um download em andamento nesta biblioteca. Aguarde a conclusão.")
+                            else:
+                                destino_lote.mkdir(parents=True, exist_ok=True)
+                                log_file = configurar_logs()
+                                with st.spinner("Baixando o CD…"):
+                                    resultado_album = executar_download(fonte_album_linha["url"], destino_lote, True, numerar_playlist=True, exigir_desafios_js=True)
+                                st.session_state.ultimo_log = str(log_file)
+                                if resultado_album.arquivos:
+                                    st.success(f"CD: {len(resultado_album.arquivos)} música(s) baixada(s).")
+                                if resultado_album.falhas:
+                                    st.warning("Algumas músicas não puderam ser baixadas.")
+                                st.rerun()
+                elif acao["tipo"] == "faltantes":
                     historico_lote = HistoryStore(RAIZ_PROJETO / "data" / "library_history.sqlite")
                     destino_lote = diretorio_do_album(registro["Artista"], registro["CD"])
                     plano = planejar_faixas_faltantes(registro["Artista"], registro["CD"], destino_lote, historico_lote)
                     if st.button(f"Baixar músicas faltantes ({len(plano)})", key=f"baixar-faltantes-{registro['Artista']}-{registro['CD']}"):
-                        st.session_state[chave_lote] = plano
-                    confirmacao = st.session_state.get(chave_lote)
-                    if confirmacao:
-                        st.warning("Serão baixadas, uma por vez: " + ", ".join(item["track"] for item in confirmacao))
-                        if st.button("Confirmar download das faixas faltantes", key=f"confirmar-{registro['Artista']}-{registro['CD']}"):
+                        if not plano:
+                            st.info("As faixas já existem na biblioteca ou não há uma fonte disponível no momento.")
+                        else:
+                            st.info("Baixando, uma por vez: " + ", ".join(item["track"] for item in plano))
+
                             def baixar_planejada(item, destino):
                                 if item["kind"] == "playlist_item":
                                     return baixar_item_da_playlist(item["url"], destino, True, item["track"], item["index"])
@@ -216,9 +305,8 @@ def render_app():  # pragma: no cover - renderizado pelo Streamlit em execução
                                     log_file = configurar_logs()
                                     st.session_state.status_download = "Baixando músicas faltantes…"
                                     with st.spinner("Baixando somente as faixas faltantes…"):
-                                        resultado_lote = executar_plano(confirmacao, destino_lote, baixar_planejada, historico_lote)
+                                        resultado_lote = executar_plano(plano, destino_lote, baixar_planejada, historico_lote)
                                     st.session_state.ultimo_log = str(log_file)
-                                    st.session_state.pop(chave_lote, None)
                                     if resultado_lote["baixadas"]:
                                         st.success("Músicas baixadas: " + ", ".join(resultado_lote["baixadas"]))
                                     if resultado_lote["faltando"]:
@@ -229,8 +317,6 @@ def render_app():  # pragma: no cover - renderizado pelo Streamlit em execução
                                         st.info("As faixas já existem na biblioteca.")
                                     st.rerun()
                     historico_lote.close()
-                elif registro["Status"] in {"Sem catálogo", "Sem faixas"}:
-                    st.caption("Cadastre a playlist do álbum antes de baixar as faixas.")
                 if cd_filtro == registro["CD"] and registro["Status"] == "Incompleto" and registro["faltantes"]:
                     st.warning("Faixas faltantes: " + ", ".join(registro["faltantes"]))
                     historico = HistoryStore(RAIZ_PROJETO / "data" / "library_history.sqlite")

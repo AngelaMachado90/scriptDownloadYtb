@@ -24,6 +24,7 @@ RUN deno --version && python -c "import importlib.metadata; print(importlib.meta
 COPY --chown=1000:1000 app.py youtubeVideos.py ./
 COPY --chown=1000:1000 music_library ./music_library
 COPY --chown=1000:1000 scripts ./scripts
+COPY --chown=1000:1000 data ./data
 RUN mkdir -p /app/downloads /app/logs && chown -R 1000:1000 /app
 
 USER 1000:1000

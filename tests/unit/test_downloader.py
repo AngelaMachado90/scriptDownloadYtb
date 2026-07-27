@@ -45,6 +45,17 @@ def test_numeracao_playlist_e_status():
 
 
 @pytest.mark.unit
+def test_bloqueio_de_cookie_ou_429_nao_configura_retativas():
+    registrador = yv.RegistradorYtDlp()
+    registrador.warning("The provided YouTube account cookies are no longer valid")
+    assert registrador.bloqueio == "AUTH"
+    opcoes = yv.obter_opcoes("/tmp", True, registrador=registrador)
+    assert opcoes["retries"] == 0
+    assert opcoes["extractor_retries"] == 0
+    assert opcoes["fragment_retries"] == 0
+
+
+@pytest.mark.unit
 def test_arquivo_criado_nao_anula_retorno_de_erro(monkeypatch, tmp_path):
     monkeypatch.setattr(yv.yt_dlp, "YoutubeDL", YdlFalso)
     monkeypatch.setattr(yv, "opcoes_desafio_javascript", lambda: {})
@@ -76,18 +87,21 @@ def test_logs_ficam_fora_da_biblioteca_e_cookie_nao_vaza(monkeypatch, tmp_path):
     raiz = tmp_path / "projeto"
     musica = raiz / "downloads" / "Artista" / "Album"
     musica.mkdir(parents=True)
-    secreto = "/nao/expor/cookies.txt"
+    secreto = tmp_path / "cookies.txt"
+    secreto.write_text("conteudo-sensivel", encoding="utf-8")
+    runtime = tmp_path / "cookies-runtime.txt"
     monkeypatch.setattr(yv, "RAIZ_PROJETO", raiz)
-    monkeypatch.setenv("YTDLP_COOKIES_FILE", secreto)
+    monkeypatch.setattr(yv, "COOKIE_RUNTIME_PATH", runtime)
+    monkeypatch.setenv("YTDLP_COOKIES_FILE", str(secreto))
     opcoes = yv.opcoes_desafio_javascript()
     log_file = yv.configurar_logs()
     logging.info("evento de teste")
     for handler in logging.getLogger().handlers:
         handler.flush()
-    assert opcoes["cookiefile"] == secreto
+    assert opcoes["cookiefile"] == str(runtime)
     assert log_file.parent == raiz / "logs"
     assert not list(musica.glob("*.log"))
-    assert secreto not in log_file.read_text(encoding="utf-8")
+    assert str(secreto) not in log_file.read_text(encoding="utf-8")
 
 
 @pytest.mark.unit
@@ -110,3 +124,22 @@ def test_playlist_sem_itens_e_resumo(monkeypatch, tmp_path, capsys):
     assert yv.status_final(resultado) == "FALHA"
     assert yv.exibir_resumo(resultado, 0, tmp_path / "log.txt") == "FALHA"
     assert "FINAL: FALHA" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+def test_playlist_para_apos_primeiro_bloqueio_temporario(monkeypatch, tmp_path):
+    itens = [
+        {"title": "Primeira", "url": "id1", "playlist_index": 1},
+        {"title": "Segunda", "url": "id2", "playlist_index": 2},
+    ]
+    chamadas = []
+    monkeypatch.setattr(yv, "obter_itens_playlist", lambda *_args: (itens, ""))
+
+    def bloqueada(*args):
+        chamadas.append(args[0])
+        return yv.ResultadoDownload(falhas=["Primeira: O YouTube bloqueou tentativas temporariamente. Aguarde antes de tentar novamente."])
+
+    monkeypatch.setattr(yv, "baixar_item", bloqueada)
+    resultado = yv.baixar_playlist("https://fake/?list=1", tmp_path, True)
+    assert chamadas == ["https://www.youtube.com/watch?v=id1"]
+    assert len(resultado.falhas) == 1

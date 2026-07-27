@@ -15,8 +15,8 @@ download começa sem clique explícito em **Iniciar download**.
 
 ## Baixar músicas faltantes
 
-Um CD **Incompleto** exibe **Baixar músicas faltantes (N)**. Confira a lista e
-confirme: só as faixas sem MP3 correspondente são processadas, uma por vez e na
+Um CD **Incompleto** exibe **Baixar músicas faltantes (N)**. Um clique inicia a
+ação: só as faixas sem MP3 correspondente são processadas, uma por vez e na
 ordem do álbum. CDs **Sem catálogo** ou **Sem faixas** precisam de playlist e
 catálogo antes de poderem ser completados.
 

@@ -139,14 +139,19 @@ Na tela **Biblioteca do Ariel**:
 7. Aguarde o resumo final.
 
 Quando um CD estiver como **Incompleto**, a seção **Minha biblioteca** mostra
-**Baixar músicas faltantes (N)**. Ao clicar, confira a lista e confirme. A ação
+**Baixar músicas faltantes (N)**. Um clique inicia a ação e mostra a lista. A ação
 baixa apenas as faixas que ainda não possuem MP3, uma por vez e na numeração
 original. Ela usa uma fonte individual cadastrada; se houver apenas playlist de
 álbum, seleciona somente a posição correspondente na playlist. Uma falha fica
 registrada no histórico e bloqueia a mesma URL por 30 dias.
 
-CDs marcados como **Sem catálogo** ou **Sem faixas** não habilitam essa ação:
-cadastre a playlist e as faixas esperadas do álbum antes de tentar completá-lo.
+Um CD sem faixas, mas com catálogo e playlist cadastrados, exibe **Baixar CD
+completo**. Um CD completo mostra **CD completo** desabilitado. Sem catálogo ou
+fonte, a ação fica desabilitada como **Fonte do CD não cadastrada**.
+
+As fontes por faixa usam URL canônica e ID de vídeo: parâmetros de rádio não
+criam alternativa. Em falha, apenas aquela URL fica bloqueada por 30 dias e a
+próxima fonte com outro ID de vídeo é tentada.
 
 A interface só pode criar arquivos dentro de:
 

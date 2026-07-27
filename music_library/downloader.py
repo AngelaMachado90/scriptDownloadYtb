@@ -48,11 +48,17 @@ class RegistradorYtDlp:
 
     def __init__(self):
         self.erros = []
+        self.bloqueio = None
 
     def debug(self, mensagem):
         logging.debug("yt-dlp: %s", mensagem)
 
     def warning(self, mensagem):
+        texto = str(mensagem)
+        categoria = classificar_erro(texto)
+        if categoria in {"AUTH", "HTTP_429"}:
+            self.bloqueio = categoria
+            self.erros.append(texto)
         logging.warning("yt-dlp: %s", mensagem)
 
     def error(self, mensagem):
@@ -190,6 +196,11 @@ def obter_opcoes(diretorio, somente_audio, numero_faixa=None, registrador=None):
         "noprogress": False,
         # A playlist continua mesmo com itens indisponíveis. Cada retorno é validado abaixo.
         "ignoreerrors": True,
+        # Bloqueio de autenticação/429 não deve deixar a interface presa em retentativas.
+        "retries": 0,
+        "extractor_retries": 0,
+        "fragment_retries": 0,
+        "socket_timeout": 20,
     }
     opcoes.update(opcoes_desafio_javascript())
     if registrador:
@@ -225,7 +236,7 @@ def baixar_item(url, diretorio, somente_audio, descricao, indice_playlist=None, 
         motivo = f"código de retorno {codigo_retorno}" if codigo_retorno != 0 else "nenhum arquivo final criado"
         if registrador.erros:
             motivo = f"{motivo}; {registrador.erros[-1]}"
-        categoria = classificar_erro(motivo)
+        categoria = registrador.bloqueio or classificar_erro(motivo)
         resultado.falhas.append(f"{descricao}: {mensagem_amigavel(categoria)}")
         logging.error("Falha técnica em '%s' (%s).", descricao, motivo)
     else:
@@ -252,7 +263,7 @@ def baixar_item_da_playlist(url, diretorio, somente_audio, descricao, indice):
         motivo = f"código de retorno {codigo}" if codigo != 0 else "nenhum arquivo final criado"
         if registrador.erros:
             motivo = f"{motivo}; {registrador.erros[-1]}"
-        categoria = classificar_erro(motivo)
+        categoria = registrador.bloqueio or classificar_erro(motivo)
         resultado.falhas.append(f"{descricao}: {mensagem_amigavel(categoria)}")
         logging.error("Falha técnica na faixa %s da playlist (%s).", indice, motivo)
     return resultado
@@ -272,6 +283,9 @@ def obter_itens_playlist(url_playlist, limite):
         "extract_flat": "discard_in_playlist",
         "quiet": True,
         "logger": registrador,
+        "retries": 0,
+        "extractor_retries": 0,
+        "socket_timeout": 20,
     }
     opcoes.update(opcoes_desafio_javascript())
     try:
@@ -281,6 +295,8 @@ def obter_itens_playlist(url_playlist, limite):
         logging.error("Não foi possível ler a playlist: %s", erro)
         return None, str(erro)
 
+    if registrador.bloqueio:
+        return None, mensagem_amigavel(registrador.bloqueio)
     if not info:
         return [], registrador.erros[-1] if registrador.erros else ""
     itens = list(info.get("entries") or [])
@@ -312,9 +328,11 @@ def baixar_playlist(url_playlist, diretorio, somente_audio, limite=None, numerar
         if not url_item.startswith("http"):
             url_item = f"https://www.youtube.com/watch?v={url_item}"
         indice = item.get("playlist_index") or posicao
-        resultado.adicionar(
-            baixar_item(url_item, diretorio, somente_audio, titulo, indice, numerar_playlist)
-        )
+        resultado_item = baixar_item(url_item, diretorio, somente_audio, titulo, indice, numerar_playlist)
+        resultado.adicionar(resultado_item)
+        if eh_bloqueio_temporario(resultado_item):
+            logging.warning("Playlist interrompida após bloqueio temporário do YouTube.")
+            break
     return resultado
 
 

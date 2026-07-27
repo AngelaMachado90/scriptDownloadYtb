@@ -1,6 +1,12 @@
 {
   "sources": [
     {"artist": "Jonas Brothers", "album": "2023 - The Album", "type": "album_playlist", "url": "https://www.youtube.com/watch?v=1E8V-HIIJ30&list=PLxA687tYuMWiTlscgQ2EowZAmBecEwwrS", "origin": "Jonas Brothers official YouTube channel", "priority": 1, "verified_officially": true},
-    {"artist": "Jonas Brothers", "album": "2019 - Happiness Begins", "type": "album_playlist", "url": "https://www.youtube.com/watch?v=Vp1TwHLDOzg&list=PLH9WbNQwh6jeZ9mF-Kdz9B2sVlKUdVrJA", "origin": "Jonas Brothers official YouTube channel", "priority": 1, "verified_officially": true}
+    {"artist": "Jonas Brothers", "album": "2019 - Happiness Begins", "type": "album_playlist", "url": "https://www.youtube.com/watch?v=Vp1TwHLDOzg&list=PLH9WbNQwh6jeZ9mF-Kdz9B2sVlKUdVrJA", "origin": "Jonas Brothers official YouTube channel", "priority": 1, "verified_officially": true},
+    {"artist": "Disturbed","album": "2002 - Believe", "type": "album_playlist","url": "https://www.youtube.com/playlist?list=PLaKGqsgrt0cIigofXgfeZWxmvnW6djUoj","origin": "playlist cadastrada manualmente","priority": 1,"verified_officially": false},
+    {"artist": "Disturbed","album": "2005 - Ten Thousand Fists", "type": "album_playlist","url": "https://www.youtube.com/playlist?list=PLC230F8474B894CCB","origin": "playlist cadastrada manualmente","priority": 1,"verified_officially": false},
+    {"artist": "Disturbed","album": "2008 - Indestructible", "type": "album_playlist","url": "https://www.youtube.com/playlist?list=PLGs3oaV3dpt78_RDClwTWCQP0Dsk7QQmk","origin": "playlist cadastrada manualmente","priority": 1,"verified_officially": false},
+    {"artist": "Disturbed","album": "2010 - Asylum", "type": "album_playlist","url": "https://www.youtube.com/playlist?list=PLaKGqsgrt0cIVZUmT6rqtcs1g-QZMcEwg","origin": "playlist cadastrada manualmente","priority": 1,"verified_officially": false},
+    {"artist": "Disturbed","album": "2015 - Immortalized", "type": "album_playlist","url": "https://www.youtube.com/playlist?list=PLkROH3Eqs0T9ZJvHb-IpUgvb7tynpRGGe","origin": "playlist cadastrada manualmente","priority": 1,"verified_officially": false},
+    {"artist": "Disturbed","album": "2018 - Evolution", "type": "album_playlist","url": "https://www.youtube.com/playlist?list=PLmeS2kMHvZEd_WgqtNoFW-8IZDVRpQ9Nm","origin": "playlist cadastrada manualmente","priority": 1,"verified_officially": false}
   ]
 }

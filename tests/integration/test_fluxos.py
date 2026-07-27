@@ -5,6 +5,7 @@ import pytest
 
 import app
 import music_library.downloader as yv
+from music_library.library import filtrar_biblioteca
 
 
 @pytest.mark.integration
@@ -20,7 +21,10 @@ def test_biblioteca_vazia_e_estrutura_falsa(monkeypatch, tmp_path):
     faixa = app.DOWNLOADS_DIR / "Banda" / "Disco" / "01 - Música.mp3"
     faixa.parent.mkdir(parents=True)
     faixa.write_bytes(b"fake")
-    assert app.biblioteca() == [{"Artista": "Banda", "Álbum": "Disco", "MP3s": 1}]
+    assert app.biblioteca()[0]["Artista"] == "Banda"
+    assert app.biblioteca()[0]["CD"] == "Disco"
+    assert app.biblioteca()[0]["Status"] == "Sem catálogo"
+    assert filtrar_biblioteca(app.biblioteca(), artista="Banda", cd="Disco") == app.biblioteca()
 
 
 @pytest.mark.integration

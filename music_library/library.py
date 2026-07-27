@@ -12,6 +12,9 @@ def normalizar_faixa(nome):
     texto = unicodedata.normalize("NFKD", Path(nome).stem).encode("ascii", "ignore").decode().lower()
     texto = re.sub(r"^\s*\d{1,3}\s*[-._]\s*", "", texto)
     texto = re.sub(r"(?i)^disturbed\s*-?\s*", "", texto)
+    # Sufixos usado por vídeos já presentes na biblioteca; não altera arquivos.
+    texto = re.sub(r"(?i)\s*\((?:official\s+(?:music|lyrics)\s+video)\)\s*(?:\[(?:4k|hd)\s+upgrade\])?\s*$", "", texto)
+    texto = re.sub(r"(?i)\s*\[(?:official\s+(?:audio|music|lyrics)\s*(?:video)?|(?:4k|hd)\s+upgrade)\]\s*$", "", texto)
     texto = re.sub(r"(?i)\s*\[?official\s+(music|lyrics)\s+video\]?\s*$", "", texto)
     return re.sub(r"[^a-z0-9]+", "", texto)
 

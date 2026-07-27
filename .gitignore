@@ -8,3 +8,4 @@ logs/
 cookies.txt
 youtube-cookies.txt
 secrets/
+data/*.sqlite

@@ -27,6 +27,27 @@ def sanitizar_url(url):
     return urlunsplit((partes.scheme, partes.netloc, partes.path, urlencode(query), ""))
 
 
+def normalizar_url_youtube(url, preferir_playlist=False):
+    """Mantém somente o identificador canônico de vídeo ou playlist do YouTube."""
+    partes = urlsplit(str(url).strip())
+    host = partes.netloc.lower().removeprefix("www.")
+    query = dict(parse_qsl(partes.query, keep_blank_values=True))
+    video_id = query.get("v") or (partes.path.strip("/") if host == "youtu.be" else None)
+    playlist_id = query.get("list")
+    if host in {"youtube.com", "m.youtube.com", "youtu.be"}:
+        if playlist_id and (preferir_playlist or not video_id):
+            return f"https://www.youtube.com/playlist?list={playlist_id}"
+        if video_id:
+            return f"https://www.youtube.com/watch?v={video_id}"
+    return sanitizar_url(url)
+
+
+def identificador_youtube(url):
+    normalizada = normalizar_url_youtube(url)
+    query = dict(parse_qsl(urlsplit(normalizada).query))
+    return query.get("v") or query.get("list")
+
+
 def iso(valor):
     return valor.astimezone(timezone.utc).isoformat()
 
@@ -39,7 +60,7 @@ class HistoryStore:
         self.connection.row_factory = sqlite3.Row
         self.connection.executescript("""
             CREATE TABLE IF NOT EXISTS tracks (id INTEGER PRIMARY KEY, artist TEXT NOT NULL, album TEXT NOT NULL, track TEXT NOT NULL, resolved_at TEXT, downloaded_url TEXT, video_id TEXT, downloaded_at TEXT, UNIQUE(artist, album, track));
-            CREATE TABLE IF NOT EXISTS candidates (id INTEGER PRIMARY KEY, track_id INTEGER NOT NULL REFERENCES tracks(id), url TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('CATALOGO_OFICIAL','MANUAL','BUSCA_MANUAL')), is_valid INTEGER NOT NULL DEFAULT 0, UNIQUE(track_id, url));
+            CREATE TABLE IF NOT EXISTS candidates (id INTEGER PRIMARY KEY, track_id INTEGER NOT NULL REFERENCES tracks(id), url TEXT NOT NULL, video_id TEXT, priority INTEGER NOT NULL DEFAULT 100, origin TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'NAO_VERIFICADA', source TEXT NOT NULL CHECK(source IN ('CATALOGO_OFICIAL','MANUAL','BUSCA_MANUAL')), is_valid INTEGER NOT NULL DEFAULT 0, UNIQUE(track_id, url));
             CREATE TABLE IF NOT EXISTS attempts (id INTEGER PRIMARY KEY, candidate_id INTEGER NOT NULL REFERENCES candidates(id), attempted_at TEXT NOT NULL, result TEXT NOT NULL CHECK(result IN ('SUCESSO','FALHA','BLOQUEADA')), error_category TEXT NOT NULL, message TEXT NOT NULL, technical_message TEXT NOT NULL DEFAULT '', next_retry_at TEXT);
         """)
         for column in ("downloaded_url TEXT", "video_id TEXT", "downloaded_at TEXT"):
@@ -51,6 +72,11 @@ class HistoryStore:
             self.connection.execute("ALTER TABLE attempts ADD COLUMN technical_message TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+        for column in ("video_id TEXT", "priority INTEGER NOT NULL DEFAULT 100", "origin TEXT NOT NULL DEFAULT ''", "status TEXT NOT NULL DEFAULT 'NAO_VERIFICADA'"):
+            try:
+                self.connection.execute(f"ALTER TABLE candidates ADD COLUMN {column}")
+            except sqlite3.OperationalError:
+                pass
         self.connection.commit()
 
     def close(self):
@@ -62,15 +88,16 @@ class HistoryStore:
         self.connection.commit()
         return row["id"]
 
-    def add_candidate(self, artist, album, track, url, source="MANUAL"):
+    def add_candidate(self, artist, album, track, url, source="MANUAL", priority=100, origin="", status="NAO_VERIFICADA"):
         track_id = self.track_id(artist, album, track)
-        url = sanitizar_url(url)
-        self.connection.execute("INSERT OR IGNORE INTO candidates(track_id, url, source) VALUES (?, ?, ?)", (track_id, url, source))
+        url = normalizar_url_youtube(url)
+        video_id = identificador_youtube(url)
+        self.connection.execute("INSERT OR IGNORE INTO candidates(track_id, url, video_id, priority, origin, status, source) VALUES (?, ?, ?, ?, ?, ?, ?)", (track_id, url, video_id, priority, sanitizar_mensagem(origin), status, source))
         self.connection.commit()
         return self.connection.execute("SELECT id, url, source FROM candidates WHERE track_id=? AND url=?", (track_id, url)).fetchone()["id"]
 
     def mark_official(self, candidate_id):
-        self.connection.execute("UPDATE candidates SET source='CATALOGO_OFICIAL', is_valid=1 WHERE id=?", (candidate_id,))
+        self.connection.execute("UPDATE candidates SET source='CATALOGO_OFICIAL', status='VERIFICADA_OFICIALMENTE', is_valid=1 WHERE id=?", (candidate_id,))
         self.connection.commit()
 
     def record_download(self, artist, album, track, url, video_id=None, now=None):
@@ -98,7 +125,7 @@ class HistoryStore:
         self.connection.commit()
 
     def sources(self, artist, album, track):
-        return self.connection.execute("""SELECT c.id, c.url, c.source, c.is_valid, a.result, a.error_category, a.message, a.technical_message, a.next_retry_at FROM candidates c JOIN tracks t ON t.id=c.track_id LEFT JOIN attempts a ON a.id=(SELECT id FROM attempts WHERE candidate_id=c.id ORDER BY id DESC LIMIT 1) WHERE t.artist=? AND t.album=? AND t.track=? ORDER BY c.id""", (artist, album, track)).fetchall()
+        return self.connection.execute("""SELECT c.id, c.url, c.video_id, c.priority, c.origin, c.status, c.source, c.is_valid, a.result, a.error_category, a.message, a.technical_message, a.next_retry_at FROM candidates c JOIN tracks t ON t.id=c.track_id LEFT JOIN attempts a ON a.id=(SELECT id FROM attempts WHERE candidate_id=c.id ORDER BY id DESC LIMIT 1) WHERE t.artist=? AND t.album=? AND t.track=? ORDER BY c.priority, c.id""", (artist, album, track)).fetchall()
 
     def history(self, artist=None, album=None, track=None, category=None):
         clauses, values = [], []
